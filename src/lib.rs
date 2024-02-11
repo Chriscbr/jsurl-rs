@@ -1,45 +1,59 @@
 pub fn serialize(obj: &serde_json::Value) -> String {
+    let mut result = String::new();
+    serialize_helper(obj, &mut result);
+    result
+}
+
+pub fn serialize_helper(obj: &serde_json::Value, output: &mut String) {
     match obj {
-        serde_json::Value::Null => "~null".to_string(),
-        serde_json::Value::Bool(b) => format!("~{}", b),
+        serde_json::Value::Null => {
+            output.push_str("~null");
+        }
+        serde_json::Value::Bool(b) => {
+            output.push('~');
+            output.push_str(if *b { "true" } else { "false" });
+        }
         serde_json::Value::Number(n) => {
             if let Some(n) = n.as_i64() {
-                format!("~{}", n)
+                output.push('~');
+                output.push_str(&n.to_string());
             } else if let Some(n) = n.as_f64() {
                 if n.is_finite() {
-                    format!("~{}", n)
+                    output.push('~');
+                    output.push_str(&n.to_string());
                 } else {
                     // https://github.com/Sage/jsurl/blob/b1e244d145bb440f776d8fec673cc743c42c5cbc/lib/jsurl.js#L42
-                    "~null".to_string()
+                    output.push_str("~null");
                 }
             } else {
                 panic!("Unexpected number type")
             }
         }
-        serde_json::Value::String(s) => format!("~'{}", encode_string(s)),
+        serde_json::Value::String(s) => {
+            output.push_str("~'");
+            output.push_str(&encode_string(s)); // TODO
+        }
         serde_json::Value::Array(a) => {
-            let mut result = "~(".to_string();
+            output.push_str("~(");
             if a.is_empty() {
-                result.push('~');
+                output.push('~');
             } else {
                 for v in a.iter() {
-                    result.push_str(&serialize(v));
+                    serialize_helper(v, output);
                 }
             }
-            result.push(')');
-            result
+            output.push(')');
         }
         serde_json::Value::Object(o) => {
-            let mut result = "~(".to_string();
+            output.push_str("~(");
             for (i, (k, v)) in o.iter().enumerate() {
                 if i > 0 {
-                    result.push('~');
+                    output.push('~');
                 }
-                result.push_str(&encode_string(k));
-                result.push_str(&serialize(v));
+                output.push_str(&encode_string(k));
+                serialize_helper(v, output);
             }
-            result.push(')');
-            result
+            output.push(')');
         }
     }
 }
