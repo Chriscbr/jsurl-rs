@@ -60,7 +60,6 @@ pub fn serialize_helper(obj: &serde_json::Value, output: &mut String) {
 
 fn encode_string(s: &str, output: &mut String) {
     for ch in s.chars() {
-        // If the character is alphanumeric, a dot, an underscore, or a hyphen, it doesn't need to be encoded.
         if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
             output.push(ch);
         } else if ch == '$' {
