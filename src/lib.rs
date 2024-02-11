@@ -76,21 +76,13 @@ fn encode_string(s: &str, output: &mut String) {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum DeserializeError {
-    InvalidValue(String),
-    InvalidEscapeSequence(String),
-    UnexpectedCharacter(char, Option<char>), // actual, expected
-    UnexpectedEnd,
-}
+pub struct DeserializeError;
 
 pub fn deserialize(s: &str) -> Result<serde_json::Value, DeserializeError> {
     let mut chars = s.chars();
     let result = parse_one(&mut chars)?;
     if chars.next().is_some() {
-        return Err(DeserializeError::UnexpectedCharacter(
-            chars.next().unwrap(),
-            None,
-        ));
+        return Err(DeserializeError);
     }
     Ok(result)
 }
@@ -108,6 +100,29 @@ fn peekn(chars: &std::str::Chars, n: usize) -> Option<char> {
     iter.next()
 }
 
+fn hex_digit_to_value(c: char) -> Option<u32> {
+    match c {
+        '0'..='9' => Some(c as u32 - '0' as u32),
+        'a'..='f' => Some(10 + c as u32 - 'a' as u32),
+        'A'..='F' => Some(10 + c as u32 - 'A' as u32),
+        _ => None,
+    }
+}
+
+fn hex2_to_unicode(a: char, b: char) -> Option<char> {
+    let high = hex_digit_to_value(a)?;
+    let low = hex_digit_to_value(b)?;
+    std::char::from_u32((high << 4) | low)
+}
+
+fn hex4_to_unicode(a: char, b: char, c: char, d: char) -> Option<char> {
+    let highest = hex_digit_to_value(a)?;
+    let high = hex_digit_to_value(b)?;
+    let low = hex_digit_to_value(c)?;
+    let lowest = hex_digit_to_value(d)?;
+    std::char::from_u32((highest << 12) | (high << 8) | (low << 4) | lowest)
+}
+
 fn decode(chars: &mut std::str::Chars) -> Result<String, DeserializeError> {
     let mut result = String::new();
     loop {
@@ -121,72 +136,22 @@ fn decode(chars: &mut std::str::Chars) -> Result<String, DeserializeError> {
                 match chars.next() {
                     // case: character with unicode value > 0xff
                     Some('*') => {
-                        let hex1 = chars.next().ok_or(DeserializeError::UnexpectedEnd)?;
-                        let hex2 = chars.next().ok_or(DeserializeError::UnexpectedEnd)?;
-                        let hex3 = chars.next().ok_or(DeserializeError::UnexpectedEnd)?;
-                        let hex4 = chars.next().ok_or(DeserializeError::UnexpectedEnd)?;
+                        let x1 = chars.next().ok_or(DeserializeError)?;
+                        let x2 = chars.next().ok_or(DeserializeError)?;
+                        let x3 = chars.next().ok_or(DeserializeError)?;
+                        let x4 = chars.next().ok_or(DeserializeError)?;
 
-                        // check that both hex1 and hex2 are valid hex characters
-                        if !hex1.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex1, None));
-                        }
-                        if !hex2.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex2, None));
-                        }
-                        if !hex3.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex3, None));
-                        }
-                        if !hex4.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex4, None));
-                        }
-
-                        // to avoid a heap allocation, we use a stack-allocated buffer
-                        let mut buf: [u8; 16] = [0; 16];
-                        let size_c1 = hex1.encode_utf8(&mut buf).len();
-                        let size_c2 = hex2.encode_utf8(&mut buf[size_c1..]).len();
-                        let size_c3 = hex3.encode_utf8(&mut buf[size_c1 + size_c2..]).len();
-                        let size_c4 = hex4
-                            .encode_utf8(&mut buf[size_c1 + size_c2 + size_c3..])
-                            .len();
-                        let chars_str =
-                            std::str::from_utf8(&buf[..size_c1 + size_c2 + size_c3 + size_c4])
-                                .unwrap();
-
-                        let code = u32::from_str_radix(chars_str, 16).map_err(|_| {
-                            DeserializeError::InvalidEscapeSequence(chars_str.to_string())
-                        })?;
-                        result.push(std::char::from_u32(code).ok_or(
-                            DeserializeError::InvalidEscapeSequence(chars_str.to_string()),
-                        )?);
+                        result.push(hex4_to_unicode(x1, x2, x3, x4).ok_or(DeserializeError)?);
                     }
                     // case: character with unicode value <= 0xff
                     Some(c) => {
-                        let hex1 = c;
-                        let hex2 = chars.next().ok_or(DeserializeError::UnexpectedEnd)?;
+                        let x1 = c;
+                        let x2 = chars.next().ok_or(DeserializeError)?;
 
-                        // check that both hex1 and hex2 are valid hex characters
-                        if !hex1.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex1, None));
-                        }
-                        if !hex2.is_ascii_hexdigit() {
-                            return Err(DeserializeError::UnexpectedCharacter(hex2, None));
-                        }
-
-                        // to avoid a heap allocation, we use a stack-allocated buffer
-                        let mut buf: [u8; 8] = [0; 8];
-                        let size_c1 = hex1.encode_utf8(&mut buf).len();
-                        let size_c2 = hex2.encode_utf8(&mut buf[size_c1..]).len();
-                        let chars_str = std::str::from_utf8(&buf[..size_c1 + size_c2]).unwrap();
-
-                        let code = u32::from_str_radix(chars_str, 16).map_err(|_| {
-                            DeserializeError::InvalidEscapeSequence(chars_str.to_string())
-                        })?;
-                        result.push(std::char::from_u32(code).ok_or(
-                            DeserializeError::InvalidEscapeSequence(chars_str.to_string()),
-                        )?);
+                        result.push(hex2_to_unicode(x1, x2).ok_or(DeserializeError)?);
                     }
                     None => {
-                        return Err(DeserializeError::UnexpectedEnd);
+                        return Err(DeserializeError);
                     }
                 }
             }
@@ -206,17 +171,15 @@ fn decode(chars: &mut std::str::Chars) -> Result<String, DeserializeError> {
 fn eat(chars: &mut std::str::Chars, expected: char) -> Result<(), DeserializeError> {
     match chars.next() {
         Some(c) if c == expected => Ok(()),
-        Some(c) => Err(DeserializeError::UnexpectedCharacter(c, Some(expected))),
-        None => Err(DeserializeError::UnexpectedEnd),
+        Some(_) => Err(DeserializeError),
+        None => Err(DeserializeError),
     }
 }
 
 fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
     eat(chars, '~')?;
-    let c = peek(chars);
-    match c {
+    match chars.next() {
         Some('(') => {
-            chars.next();
             let c = peek(chars);
             if c == Some('~') {
                 // parse as an array
@@ -253,20 +216,15 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
                         chars.next();
                         return Ok(serde_json::Value::Object(map));
                     } else {
-                        return Err(DeserializeError::UnexpectedCharacter(c.unwrap(), None));
+                        return Err(DeserializeError);
                     }
                 }
             }
         }
-        Some('\'') => {
-            chars.next();
-            Ok(serde_json::Value::String(decode(chars)?))
-        }
+        Some('\'') => Ok(serde_json::Value::String(decode(chars)?)),
         Some(c) => {
-            // keep consuming characters until we reach ), ~, or the end of our input
             let mut result = String::new();
             result.push(c);
-            chars.next();
             loop {
                 let c = peek(chars);
                 match c {
@@ -279,11 +237,11 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
                         }
                         let c = result.chars().next().unwrap();
                         if c == '-' || c.is_ascii_digit() {
-                            return Ok(serde_json::Value::Number(result.parse().map_err(
-                                |_| DeserializeError::InvalidValue(result.to_string()),
-                            )?));
+                            return Ok(serde_json::Value::Number(
+                                result.parse().map_err(|_| DeserializeError)?,
+                            ));
                         }
-                        return Err(DeserializeError::InvalidValue(result));
+                        return Err(DeserializeError);
                     }
                     Some(c) => {
                         result.push(c);
@@ -292,7 +250,7 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
                 }
             }
         }
-        None => Err(DeserializeError::UnexpectedEnd),
+        None => Err(DeserializeError),
     }
 }
 
@@ -426,14 +384,9 @@ mod tests {
 
     #[test]
     fn deserialize_error() {
-        assert_eq!(
-            deserialize("~").unwrap_err(),
-            DeserializeError::UnexpectedEnd
-        );
-
-        assert_eq!(
-            deserialize("~cool").unwrap_err(),
-            DeserializeError::InvalidValue("cool".to_string())
-        );
+        assert_eq!(deserialize("").unwrap_err(), DeserializeError);
+        assert_eq!(deserialize("hello world").unwrap_err(), DeserializeError);
+        assert_eq!(deserialize("~").unwrap_err(), DeserializeError);
+        assert_eq!(deserialize("~cool").unwrap_err(), DeserializeError);
     }
 }
