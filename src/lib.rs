@@ -87,19 +87,6 @@ pub fn deserialize(s: &str) -> Result<serde_json::Value, DeserializeError> {
     Ok(result)
 }
 
-fn peek(chars: &std::str::Chars) -> Option<char> {
-    let mut iter = chars.clone();
-    iter.next()
-}
-
-fn peekn(chars: &std::str::Chars, n: usize) -> Option<char> {
-    let mut iter = chars.clone();
-    for _ in 0..n {
-        iter.next();
-    }
-    iter.next()
-}
-
 fn hex_digit_to_value(c: char) -> Option<u32> {
     match c {
         '0'..='9' => Some(c as u32 - '0' as u32),
@@ -168,25 +155,36 @@ fn decode(chars: &mut std::str::Chars) -> Result<String, DeserializeError> {
     }
 }
 
+fn peek(chars: &std::str::Chars) -> Option<char> {
+    let mut iter = chars.clone();
+    iter.next()
+}
+
+fn peekn(chars: &std::str::Chars, n: usize) -> Option<char> {
+    let mut iter = chars.clone();
+    for _ in 0..n {
+        iter.next();
+    }
+    iter.next()
+}
+
 fn eat(chars: &mut std::str::Chars, expected: char) -> Result<(), DeserializeError> {
     match chars.next() {
         Some(c) if c == expected => Ok(()),
-        Some(_) => Err(DeserializeError),
-        None => Err(DeserializeError),
+        _ => Err(DeserializeError),
     }
 }
 
 fn parse_array(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
-    let c = peekn(chars, 1);
-    if c == Some(')') {
+    // handle case where empty array is represented as "~(~)"
+    if let Some(')') = peekn(chars, 1) {
         eat(chars, '~')?;
         eat(chars, ')')?;
         return Ok(serde_json::Value::Array(Vec::new()));
     }
     let mut result = Vec::new();
     loop {
-        let c = peek(chars);
-        if c == Some(')') {
+        if let Some(')') = peek(chars) {
             chars.next();
             return Ok(serde_json::Value::Array(result));
         }
@@ -196,33 +194,28 @@ fn parse_array(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseria
 
 fn parse_object(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
     let mut map = serde_json::Map::new();
-    let c = peek(chars);
-    if c == Some(')') {
-        chars.next();
-        return Ok(serde_json::Value::Object(map));
-    }
-    loop {
+    while let Some(c) = peek(chars) {
+        if c == '~' || c == ')' {
+            chars.next();
+        }
+        if c == ')' {
+            break;
+        }
         let key = decode(chars)?;
         let value = parse_one(chars)?;
         map.insert(key, value);
-        let c = peek(chars);
-        if c == Some('~') {
-            chars.next();
-        } else if c == Some(')') {
-            chars.next();
-            return Ok(serde_json::Value::Object(map));
-        } else {
+        if peek(chars).map_or(false, |c| c != '~' && c != ')') {
             return Err(DeserializeError);
         }
     }
+    Ok(serde_json::Value::Object(map))
 }
 
 fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
     eat(chars, '~')?;
     match chars.next() {
         Some('(') => {
-            let c = peek(chars);
-            if c == Some('~') {
+            if let Some('~') = peek(chars) {
                 parse_array(chars)
             } else {
                 parse_object(chars)
@@ -233,8 +226,7 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
             let mut result = String::new();
             result.push(c);
             loop {
-                let c = peek(chars);
-                match c {
+                match peek(chars) {
                     Some(')') | Some('~') | None => {
                         match result.as_str() {
                             "null" => return Ok(serde_json::Value::Null),
@@ -242,14 +234,14 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
                             "false" => return Ok(serde_json::Value::Bool(false)),
                             _ => {}
                         }
-                        // ok to unwrap because we know result is not empty
-                        let c = result.chars().next().unwrap();
-                        if c == '-' || c.is_ascii_digit() {
-                            return Ok(serde_json::Value::Number(
-                                result.parse().map_err(|_| DeserializeError)?,
-                            ));
+                        match result.chars().next() {
+                            Some(c) if c == '-' || c.is_ascii_digit() => {
+                                return Ok(serde_json::Value::Number(
+                                    result.parse().map_err(|_| DeserializeError)?,
+                                ));
+                            }
+                            _ => return Err(DeserializeError),
                         }
-                        return Err(DeserializeError);
                     }
                     Some(c) => {
                         result.push(c);
@@ -377,8 +369,8 @@ mod tests {
             "~(c~null~d~false~e~0~f~'hello*20world**203c)"
         );
         assert_deserialize_eq!(
-            r#"{"a": [[1, 2],[], {}],"b": [],"c": {"d": "hello","e": {},"f": []}}"#,
-            "~(a~(~(~1~2)~(~)~())~b~(~)~c~(d~'hello~e~()~f~(~)))",
+            r#"{"a": [[1, 2],[], {"a1": 3}],"b": [],"c": {"d": "hello","e": {},"f": []}}"#,
+            "~(a~(~(~1~2)~(~)~(a1~3))~b~(~)~c~(d~'hello~e~()~f~(~)))",
         );
     }
 
