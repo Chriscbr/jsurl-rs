@@ -176,49 +176,56 @@ fn eat(chars: &mut std::str::Chars, expected: char) -> Result<(), DeserializeErr
     }
 }
 
+fn parse_array(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
+    let c = peekn(chars, 1);
+    if c == Some(')') {
+        eat(chars, '~')?;
+        eat(chars, ')')?;
+        return Ok(serde_json::Value::Array(Vec::new()));
+    }
+    let mut result = Vec::new();
+    loop {
+        let c = peek(chars);
+        if c == Some(')') {
+            chars.next();
+            return Ok(serde_json::Value::Array(result));
+        }
+        result.push(parse_one(chars)?);
+    }
+}
+
+fn parse_object(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
+    let mut map = serde_json::Map::new();
+    let c = peek(chars);
+    if c == Some(')') {
+        chars.next();
+        return Ok(serde_json::Value::Object(map));
+    }
+    loop {
+        let key = decode(chars)?;
+        let value = parse_one(chars)?;
+        map.insert(key, value);
+        let c = peek(chars);
+        if c == Some('~') {
+            chars.next();
+        } else if c == Some(')') {
+            chars.next();
+            return Ok(serde_json::Value::Object(map));
+        } else {
+            return Err(DeserializeError);
+        }
+    }
+}
+
 fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, DeserializeError> {
     eat(chars, '~')?;
     match chars.next() {
         Some('(') => {
             let c = peek(chars);
             if c == Some('~') {
-                // parse as an array
-                let c = peekn(chars, 1);
-                if c == Some(')') {
-                    chars.next();
-                    chars.next();
-                    return Ok(serde_json::Value::Array(vec![]));
-                }
-                let mut result = Vec::new();
-                loop {
-                    let c = peek(chars);
-                    if c == Some(')') {
-                        chars.next();
-                        return Ok(serde_json::Value::Array(result));
-                    }
-                    result.push(parse_one(chars)?);
-                }
+                parse_array(chars)
             } else {
-                // parse as an object
-                let mut map = serde_json::Map::new();
-                if c == Some(')') {
-                    chars.next();
-                    return Ok(serde_json::Value::Object(map));
-                }
-                loop {
-                    let key = decode(chars)?;
-                    let value = parse_one(chars)?;
-                    map.insert(key, value);
-                    let c = peek(chars);
-                    if c == Some('~') {
-                        chars.next();
-                    } else if c == Some(')') {
-                        chars.next();
-                        return Ok(serde_json::Value::Object(map));
-                    } else {
-                        return Err(DeserializeError);
-                    }
-                }
+                parse_object(chars)
             }
         }
         Some('\'') => Ok(serde_json::Value::String(decode(chars)?)),
@@ -235,6 +242,7 @@ fn parse_one(chars: &mut std::str::Chars) -> Result<serde_json::Value, Deseriali
                             "false" => return Ok(serde_json::Value::Bool(false)),
                             _ => {}
                         }
+                        // ok to unwrap because we know result is not empty
                         let c = result.chars().next().unwrap();
                         if c == '-' || c.is_ascii_digit() {
                             return Ok(serde_json::Value::Number(
