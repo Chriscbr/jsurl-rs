@@ -31,7 +31,7 @@ pub fn serialize_helper(obj: &serde_json::Value, output: &mut String) {
         }
         serde_json::Value::String(s) => {
             output.push_str("~'");
-            output.push_str(&encode_string(s)); // TODO
+            encode_string(s, output);
         }
         serde_json::Value::Array(a) => {
             output.push_str("~(");
@@ -50,7 +50,7 @@ pub fn serialize_helper(obj: &serde_json::Value, output: &mut String) {
                 if i > 0 {
                     output.push('~');
                 }
-                output.push_str(&encode_string(k));
+                encode_string(k, output);
                 serialize_helper(v, output);
             }
             output.push(')');
@@ -58,26 +58,22 @@ pub fn serialize_helper(obj: &serde_json::Value, output: &mut String) {
     }
 }
 
-fn encode_string(s: &str) -> String {
-    let mut encoded = String::new();
-
+fn encode_string(s: &str, output: &mut String) {
     for ch in s.chars() {
         // If the character is alphanumeric, a dot, an underscore, or a hyphen, it doesn't need to be encoded.
         if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
-            encoded.push(ch);
+            output.push(ch);
         } else if ch == '$' {
-            encoded.push('!');
+            output.push('!');
         } else {
             let code = ch as u32;
             if code < 0x100 {
-                encoded.push_str(&format!("*{:02x}", code));
+                output.push_str(&format!("*{:02x}", code));
             } else {
-                encoded.push_str(&format!("**{:04x}", code));
+                output.push_str(&format!("**{:04x}", code));
             }
         }
     }
-
-    encoded
 }
 
 #[cfg(test)]
