@@ -6,3 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+serde = "1.0.196"
+serde_json = { version = "1.0.113", features = ["std", "preserve_order"] }
+
+[dev-dependencies]
+bencher = "0.1.5"
