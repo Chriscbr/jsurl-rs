@@ -1,3 +1,26 @@
+//! This crate is a Rust implementation of the [jsurl](https://github.com/Sage/jsurl)
+//! serialization format. It is a more compact and human-readable alternative to plain URL encoding
+//! for including JSON in URLs.
+//!
+//! # Example
+//!
+//! ```rust
+//! use jsurl::{deserialize, serialize};
+//! use serde_json::json;
+//!
+//! let obj = json!({
+//!     "name": "John Doe",
+//!     "age": 42,
+//!     "children": ["Mary", "Bill"]
+//! });
+//!
+//! let serialized = serialize(&obj);
+//! assert_eq!(serialized, "~(name~'John*20Doe~age~42~children~(~'Mary~'Bill))");
+//!
+//! let deserialized = deserialize("~(name~'John*20Doe~age~42~children~(~'Mary~'Bill))").unwrap();
+//! assert_eq!(deserialized, obj);
+//! ```
+
 pub fn serialize(obj: &serde_json::Value) -> String {
     let mut result = String::new();
     serialize_helper(obj, &mut result);
