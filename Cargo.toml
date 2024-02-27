@@ -1,7 +1,16 @@
 [package]
 name = "jsurl"
 version = "0.1.0"
+authors = ["Chris Rybicki <crybicki98@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "A more compact and human-readable alternative to JSON + URL encoding."
+repository = "https://github.com/Chriscbr/jsurl-rs"
+homepage = "https://github.com/Chriscbr/jsurl-rs"
+documentation = "https://docs.rs/jsurl/"
+keywords = ["jsurl", "json", "encoding", "urls"]
+readme = "README.md"
 edition = "2021"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
