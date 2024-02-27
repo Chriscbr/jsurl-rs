@@ -1,7 +1,7 @@
 <div align="center">
   <h1>jsurl</h1>
   <p>
-    <strong>A human-readable alternative to JSON + URL encoding, especially for use in URL query parameters.</strong>
+    <strong>A more compact and human-readable alternative to JSON + URL encoding.</strong>
   </p>
   <p>
 
